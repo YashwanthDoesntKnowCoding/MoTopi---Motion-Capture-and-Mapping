@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="MoTopi: Real-Time Browser-Based Markerless Motion Capture (MoCap). Mirror your movements to a 3D humanoid character or custom Blender/Mixamo models using your webcam or phone."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>MoTopi — AI Live Motion Capture</title>
+    <!-- Google Fonts: Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Top Navigation & Status Bar -->
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="5" r="3" stroke="#00f0ff" />
+              <path d="M12 8v8M8 12l4-2 4 2M9 20l3-4 3 4" stroke="#a855f7" />
+            </svg>
+          </div>
+          <h1 class="brand-title">MoTopi <span class="tag">LIVE MOCAP</span></h1>
+        </div>
+
+        <!-- Center Model Selector Pill -->
+        <div class="model-switcher-header">
+          <button class="model-tab active" data-avatar-style="cyber" aria-pressed="true" title="Use Cyber Mannequin">
+            🤖 Cyber Mannequin
+          </button>
+          <button class="model-tab" data-avatar-style="feminine" aria-pressed="false" title="Use Nova Femme Android">
+            ✨ Nova
+          </button>
+          <button class="model-tab" data-avatar-style="crash-test" aria-pressed="false" title="Use Crash Test Dummy">
+            🟡 Crash Dummy
+          </button>
+          <span id="active-model-name" class="active-model-badge">Active: Cyber Mannequin</span>
+        </div>
+
+        <div class="header-status">
+          <div id="badge-fps" class="metric-pill">0 FPS</div>
+          <div id="badge-tracking" class="status-badge status-ready">○ Camera Off</div>
+
+          <button id="btn-phone-guide" class="btn-phone-guide" title="Guide: How to connect your phone as camera">
+            📱 Phone Camera
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Split Viewport -->
+      <main class="main-container">
+        <!-- Left Panel: Webcam Feed & 2D Skeleton Overlay -->
+        <section class="camera-panel" aria-label="Webcam Preview and Skeleton Overlay">
+          <div class="video-wrapper">
+            <video id="webcam-video" playsinline muted autoplay></video>
+            <canvas id="skeleton-canvas"></canvas>
+
+            <!-- Alerts & Tips -->
+            <div id="alert-banner" class="alert-banner" role="alert"></div>
+
+            <div id="tip-banner" class="tip-banner" role="status">
+              💡 <strong>Tracking Tip:</strong> Keep your full body, including feet, visible in the selected camera view.
+            </div>
+
+            <div class="body-calibration-panel">
+              <strong>Single-camera body calibration</strong>
+              <p>Face the camera, stand upright with arms slightly out and your whole body visible, then hold still for about two seconds.</p>
+              <div
+                class="calibration-progress"
+                role="progressbar"
+                aria-label="Body calibration progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <span id="calibration-progress-fill"></span>
+              </div>
+              <label class="motion-strength-control" for="slider-motion-strength">
+                <span>Model motion <output id="motion-strength-value" for="slider-motion-strength">100%</output></span>
+                <input id="slider-motion-strength" type="range" min="0.5" max="1.5" step="0.05" value="1">
+              </label>
+              <div class="body-calibration-actions">
+                <button id="btn-calibrate-body" type="button" disabled>Calibrate body</button>
+              </div>
+              <span id="body-calibration-status" role="status">Optional: calibration improves estimates when elbows or knees are briefly hidden.</span>
+            </div>
+
+            <div class="panel-watermark">Live Camera Pose</div>
+          </div>
+        </section>
+
+        <!-- Right Panel: Three.js 3D Viewport -->
+        <section class="viewport-panel" aria-label="3D Viewport">
+          <div id="viewport-container" class="viewport-container"></div>
+          <div class="panel-watermark">3D Stage • Rotate: Left Drag | Pan: Right Drag | Zoom: Scroll</div>
+        </section>
+      </main>
+
+      <!-- Bottom Control Bar / Floating Dock -->
+      <nav class="bottom-bar" aria-label="Motion Capture Controls">
+        <div class="dock-container">
+          <!-- Camera Controls & Device Dropdown -->
+          <div class="dock-group">
+            <button id="btn-camera" class="dock-btn btn-primary" data-state="idle">
+              <span class="icon">📷</span> Start Camera
+            </button>
+            <select id="select-camera" class="dock-select" title="Switch video source (Webcam / Phone / Camo / Iriun)">
+              <option value="">Default Camera</option>
+            </select>
+            <button id="btn-mirror" class="dock-btn" title="Toggle horizontal mirror" disabled>
+              <span class="icon">🪞</span> Mirror
+            </button>
+          </div>
+
+          <div class="dock-divider"></div>
+
+          <!-- Model Helpers -->
+          <div class="dock-group">
+            <button id="btn-reset-pose" class="dock-btn" title="Reset 3D character to T-pose and center calibration">
+              <span class="icon">🔄</span> Reset Pose
+            </button>
+            <button id="btn-toggle-skeleton" class="dock-btn" title="Toggle glowing bone lines visualizer">
+              <span class="icon">🦴</span> Skeleton
+            </button>
+          </div>
+
+          <div class="dock-divider"></div>
+
+          <!-- One Euro Filter Smoothing Slider -->
+          <div class="dock-group smoothing-group">
+            <label for="slider-smoothing" class="slider-label">
+              <span>Smoothing:</span>
+              <span id="smoothing-value" class="slider-val">1.0</span>
+            </label>
+            <input
+              type="range"
+              id="slider-smoothing"
+              min="0.1"
+              max="5.0"
+              step="0.1"
+              value="1.0"
+              class="smooth-slider"
+              title="Adjust One Euro Filter responsive smoothing"
+            />
+          </div>
+        </div>
+      </nav>
+
+      <!-- Phone Camera Setup Guide Modal -->
+      <div id="phone-guide-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h2 id="modal-title">📱 Use Your Phone as the MoCap Camera</h2>
+            <button id="btn-close-modal" class="modal-close" aria-label="Close dialog">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-intro">
+              To use your iPhone with MoTopi running on your Windows PC, first connect it through a webcam app. Once Windows recognizes the iPhone as a camera, select it from the camera dropdown.
+            </p>
+
+            <div class="guide-grid">
+              <div class="guide-box highlight">
+                <div class="box-badge">Recommended • iPhone + Windows</div>
+                <h3>1. Camo (USB or Wi-Fi)</h3>
+                <ol>
+                  <li>Install <strong>Camo Studio</strong> on Windows and <strong>Camo Camera</strong> from the App Store on your iPhone.</li>
+                  <li>Open both apps, allow camera access on the iPhone, then connect by USB or follow Camo's Wi-Fi pairing instructions.</li>
+                  <li>Keep Camo Camera open. In MoTopi, select <strong>Camo</strong> (or the iPhone camera name) from the camera dropdown.</li>
+                </ol>
+              </div>
+
+              <div class="guide-box">
+                <div class="box-badge">Alternative</div>
+                <h3>2. Iriun Webcam</h3>
+                <ol>
+                  <li>Install <strong>Iriun Webcam</strong> on Windows and its camera app on your iPhone.</li>
+                  <li>Open both apps and connect using the same Wi-Fi network or USB, following Iriun's setup prompts.</li>
+                  <li>Choose <strong>Iriun Webcam</strong> from MoTopi's camera dropdown.</li>
+                </ol>
+              </div>
+            </div>
+
+            <div class="modal-tips">
+              <strong>💡 Pro MoCap Tips:</strong>
+              <ul>
+                <li>Place your phone in landscape mode on a shelf or tripod around chest/hip height.</li>
+                <li>For full-body tracking, keep your head through feet visible. Use the body calibration control for more stable estimates of briefly hidden joints.</li>
+                <li>USB usually gives the most reliable connection. The available frame rate depends on the iPhone, connection, and webcam app.</li>
+                <li>If the camera does not appear, keep the iPhone app open, reconnect it, and reload MoTopi.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
